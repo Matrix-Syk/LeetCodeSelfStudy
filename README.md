@@ -53,8 +53,9 @@ spring的三级缓存?
 	private final Map<String, ObjectFactory<?>> singletonFactories = new HashMap<>(16); // 三级缓存
 
 	除了类型和容量不同,重要的是泛型不同.
-
 spring如何解决?
+
+三级缓存和提前暴露对象
 
 解决的思路是依赖于对象的实例化(创建对象)和初始化(属性赋值)是可以分开的.
 
@@ -62,7 +63,15 @@ spring如何解决?
 
 getBean→doGetBean→createBean→doCreateBean→ createBeanInstance→ populateBean
 
-创建A对象的时候,首先去容器中获取A对象(getSingleton),不存在,就开始创建A对象,通过反射创建对象,在内存中为A对象开辟内存空间,然后为A对象的属性赋值,B对象为A的属性,容器中不存在就走跟A一样的过程创建B对象,为B的属性A赋值时
+根据bean的生命周期,创建A对象,确定为普通bean,则调用getBean(beanName),方法中getSingleton为获取单例对象,但是传入的是一个lambda表达式参数,这个表达式只有该形参被调用getObject方法时才会被执行,这个表达式就是返回createBean方法,createBean方法中调用doCreateBean创建对象,创建时会调用createBeanInstance(反射创建对象发正在这个步骤中),这个方法根据实例化策略完成了了bean的实例化,最后将实例化完成的bean的属性完成配置.
+
+如AB互相依赖,当创建A的过程走到createBeanInstance时此时A对象被实例化,但是B属性是NULL,A对象还是个半成品,这个时候将A类名和一个lambda表达式组装为键值对放入到三级缓存中去(清空二级缓存,此时初次创建就是空的;addSingletonFactories).
+
+为A对象配置属性(获取A的属性名和value值,此处的value类型并不是B,而是一个运行时bean引用RuntimeReference,需要后续对值进行处理(如类型转等)),获取B的value时需要getBean,这是就是A的流程再走一遍创建B,同样走到将B的beanName和lambda放入三级缓存(addSingletonFactories).
+
+当B对象配置属性A时,这个时候需要查询一二三级缓存,前两者没有,在三级缓存中存储有key为A,value为lamda表达式的map,此时需要调用lambda表达式参数的的getObject()方法让其执行(执行过程中使用的提前暴露对象,此时将半成品对象返回(也需要判断该对象是否有代理对象,有返回代理对象)),将半成品对象加入二级缓存,同时降三级缓存中对应的删除,这样就可以为B对象的属性赋值,复制完成后将B对象加入一级缓存,然后将三级缓存中的B对象删除,这个时候迭代回溯就可以将A对象的B属性赋值并放入一级缓存中并将二级缓存中A对象的半成品删除.
+
+A对象创建完成,循环创建B对象的时候能在容器中查询到B对象,不在创建.
 
 三个缓存对象中分别存储了什么对象?
 
@@ -82,5 +91,6 @@ getBean→doGetBean→createBean→doCreateBean→ createBeanInstance→ populat
 
 二级缓存能否解决循环依赖问题?
 
-可以解决部分,但是有限制条件,不能出现代理对象
+可以解决部分,但是有限制条件,不能出现代理对象,从三级缓存中取出半成品对象放入二级缓存时,判断该类是否有代理对象,有的话就将代理对象放入二级缓存.
+
 
