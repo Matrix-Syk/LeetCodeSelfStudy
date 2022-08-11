@@ -93,4 +93,87 @@ A对象创建完成,循环创建B对象的时候能在容器中查询到B对象,
 
 可以解决部分,但是有限制条件,不能出现代理对象,从三级缓存中取出半成品对象放入二级缓存时,判断该类是否有代理对象,有的话就将代理对象放入二级缓存.
 
+缓存放置时间与删除时间?
+
+三级缓存:createBeanInstance之后
+
+二级缓存:第一次从三级缓存中确定是代理对象还是普通对象,同时删除三级缓存中的对应的对象;getSingleton
+
+一级缓存:生成完整对象后放入,GC回收
+
+为什么要有三级缓存?
+
+	三级缓存存在的意义是为了保证容器中同名对象只存在一个,且当一个对象需要代理的时候,我们需要先创建一个普通对象,这样我们在createbeanInstance创建对象的时候就可以判断当前类是否需要代理对象,将其存入三级缓存中的时候并不是存入的对象,而是一个lambda表达式,这个表达式被执行时会执行上述的判断,判断返回的是一个代理对象还是一个普通对象.
+
+6.BeanFactory与FactoryBean有什么区别?
+
+都是用于创建bean对象的,当使用前者船舰对象的时候,必须严格遵循spring的bean生命周期,太复杂. 
+
+如果想要简单的自定义个某个对象的创建,同时完成的对象想交给spring管理,就需要实现后者
+
+	isSingleton:是否为单例
+
+	getObejectType:获取返回对象类型
+
+	getObject:自定义创建对象(new,反射,动态代理)
+
+7.spring中的设计模式?
+
+单例模式:bean默认都是单例的
+
+工厂模式:beanfactory
+
+原型模式:指定作用域为prototype
+
+观察者模式:listener,event,muticast
+
+适配器模式:Adapter
+
+装饰者模式:BeanWrapper
+
+代理模式:动态代理
+
+责任链模式:使用AOP的时候会先生合成一个拦截器链
+
+委托者模式:delegate
+
+8.spring的AOP的底层实现原理?
+
+AOP的实现依赖的时动态代理.
+
+1.AOP时IOC的一个扩展功能,spring在创建对象时会确定当前对象是否需要增强,BeanPostProcessor类的方法可以实现对类的增强
+
+2.创建过程中确定advice,切面,切点,通过jdk或者cglib生成代理对象,advice织入切面通过代理对象调用实现对目标类的增强
+
+3.执行方法调用的时候,会调用到省城的字节码文件中,直接找到DynamicAdvisoredInterceptor类中的Intercept方法,从此方法进行
+
+4.根据定义好的通知来生成拦截器
+
+5.从拦截器链中依次获取每一个通知进行执行.
+
+9.spring的事务传播?
+
+传播特性有7种:Required,Requires_new,nested,Support,Not_Support,Never,Mandatory
+
+
+
+10.spring的事务是如何回滚的?spring的事务管理是如何实现的?
+
+声明式事务,编程式事务
+
+总:spring的事务是由AOP实现的,首先创建代理对象,按照AOP流程实现具体的操作逻辑,正常情况下要通过通知完成核心功能,但是事务是通过TransactionInterceptor实现的,然后调用invoke调用具体逻辑
+
+分:
+
+1.准备工作,解析各个方法上的事务属性,根据具体的属性判断是否开启新事务
+
+2.当需要开启的时候,获取数据库连接,关闭自动提交功能,开启事务
+
+3.执行sql
+
+4.操作过程中试过失败了,会通过completeTransactionAfterThrowing来完成事务的回滚操作,回滚的具体逻辑是通过doRowBack方法实现的,实现的时候也是要获取连接对象(conn),通过连接对象来回滚
+
+5.如果成功了,就会通过commitTransactionAfterReturning来完成事务的提交,提交的具体逻辑通过doCommit方法实现的,实现的时候也是通过连接对象来提交
+
+6.当事务执行完毕,需要清除相关的事务信息(cleanTrasactionInfo)
 
