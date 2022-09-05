@@ -496,9 +496,38 @@ redis对于一些过期的key有两种处理策略:
 
 分布式锁
 
-setnx:该命令类似于set命令都是向redis中添加键值对,但不同的是,该命令只有在key不存在的时候才能设置成功,而不是像set命令那样会将值覆盖掉.基于这样的原理就可以将通过redis实现分布式锁,获取锁的过程就是向redis中设值的过程,比如同一件商品减库存的操作有并发问题,就将商品ID最为Key,进行设值,设值成功的线程才能进行减库存操作.
+setnx:该命令类似于set命令都是向redis中添加键值对,但不同的是,该命令只有在key不存在的时候才能设置成功,而不是像set命令那样会将值覆盖掉.基于这样的原理就可以将通过redis实现分布式锁,获取锁的过程就是向redis中设值的过程,比如同一件商品减库存的操作有并发问题,就将商品ID最为Key,进行设值,设值成功的线程才能进行减库存操作.根据这个特性可以实现分布式锁
 
+    		// 模拟多线程抢购减库存操作
+            // 跟去setNx()原理使用redis实现分布式锁,并调用setIfAbsent方法将设值与设置超时放一起,保持原子性
+            String uuid = UUID.randomUUID().toString();
+            Boolean aTrue = stringRedisTemplate.opsForValue().setIfAbsent("Test:Id", uuid, 10, TimeUnit.SECONDS);
+    	
+            // 使用try-finally释放锁
+            try {
+                // 加锁成功
+                if (aTrue){
+                    System.out.println("减库存");
+                }else {
+                    // 加锁失败
+                    System.out.println("减库存失败");
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            } finally {
+                // 由于设置了失效时间,如果再上述代码在线程执行中超时,锁失效,同时新线程加锁成功,如果此时删除锁就是把别的线程的锁删除了,根据uuid验证是否为自己的锁
+                if (uuid.equals(stringRedisTemplate.opsForValue().get("Test:Id"))){
+                    // 如果锁在判断完成删除前失效了,且其他线程加了锁,又会出现删除其他线程的锁的情况
+                    // 保证原子性:增加个守护线程为锁续命
+                    stringRedisTemplate.delete("Test:Id");
+                }
+            }
 
+由于redis都是集群布置的,redis时AP设计理念,更多的是保证可用性,有可能发生,主节点加锁成功,为同步前宕机,导致锁丢失的问题,Redlock方法可以解决这些问题
+
+Redlock采用的是zookeeper的理念,集群间等价无主从关系,设置锁需要向每一个节点加锁,只有超过半数的节点加锁成功了才算加锁成功,这样在其他线程加同一把锁的时候就不可能加锁超过半数.
+
+问题:如果持久化方案是aof的周期持久化,就会出现如果持久化时加锁成功,但是宕机重启了,这个时候又一个线程加锁就能超过半数,这样就只能采用写一条持久化一条的策略降低了性能
 
 布隆过滤器
 
